@@ -5,14 +5,15 @@ from datetime import datetime, timedelta
 import threading
 import time
 import feedparser
-import requests
 import os
 import pygame
 import vlc
+import tkinter.simpledialog
 
 # Constants
 DEFAULT_ALARM_SOUND = os.path.join(os.path.dirname(__file__), "gentle_pastures.mp3")  # Now reads from alarm-clock folder
 PODCAST_FILE = "latest_podcast.mp3"
+RSS_FEEDS_FILE = os.path.join(os.path.dirname(__file__), "rss_feeds.txt")
 
 # Initialize Pygame Mixer
 pygame.mixer.init()
@@ -85,10 +86,23 @@ class AlarmClockApp:
         self.increase_btn.pack(side="left")
 
         # GUI: RSS feed
-        self.rss_entry = tk.Entry(self.controls_frame, width=50,
-                                  font=("Consolas", 12), fg="#00FF00", bg="black", insertbackground="#00FF00")
-        self.rss_entry.insert(0, "")
-        self.rss_entry.pack(pady=5)
+        self.rss_feeds = self.load_rss_feeds()
+        self.selected_rss = tk.StringVar()
+        if self.rss_feeds:
+            initial_value = self.rss_feeds[0]
+            menu_choices = self.rss_feeds
+        else:
+            initial_value = "No feeds"
+            menu_choices = ["No feeds"]
+        self.selected_rss.set(initial_value)
+        self.rss_dropdown = tk.OptionMenu(self.controls_frame, self.selected_rss, *menu_choices)
+        self.rss_dropdown.config(font=("Consolas", 12), fg="#00FF00", bg="black", activebackground="#222")
+        self.rss_dropdown.pack(pady=5)
+
+        # Add RSS Feed button
+        self.add_rss_button = tk.Button(self.controls_frame, text="Add RSS Feed", command=self.add_rss_feed,
+                                        font=("Consolas", 12), fg="#00FF00", bg="black", activebackground="#222")
+        self.add_rss_button.pack(pady=5)
 
         # GUI: Buttons
         button_frame = tk.Frame(self.controls_frame, bg="black")
@@ -156,6 +170,30 @@ class AlarmClockApp:
                 self.snoozing = False
         self.master.after(1000, self.update_clock)
 
+    def load_rss_feeds(self):
+        if not os.path.exists(RSS_FEEDS_FILE):
+            return []
+        with open(RSS_FEEDS_FILE, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
+
+    def save_rss_feed(self, feed_url):
+        with open(RSS_FEEDS_FILE, "a", encoding="utf-8") as f:
+            f.write(feed_url + "\n")
+
+    def add_rss_feed(self):
+        new_feed = tkinter.simpledialog.askstring("Add RSS Feed", "Enter RSS feed URL:")
+        if new_feed and new_feed.strip():
+            new_feed = new_feed.strip()
+            if new_feed not in self.rss_feeds:
+                self.rss_feeds.append(new_feed)
+                self.save_rss_feed(new_feed)
+                menu = self.rss_dropdown["menu"]
+                # Clear menu if it only has the dummy value
+                menu.delete(0, "end")
+                for feed in self.rss_feeds:
+                    menu.add_command(label=feed, command=tk._setit(self.selected_rss, feed))
+                self.selected_rss.set(new_feed)
+
     def set_alarm(self):
         try:
             hour = int(self.hour_var.get())
@@ -165,7 +203,7 @@ class AlarmClockApp:
             if self.alarm_time < now:
                 self.alarm_time += timedelta(days=1)
 
-            rss = self.rss_entry.get().strip()
+            rss = self.selected_rss.get().strip()
             self.rss_feed = rss if rss else None
 
             self.set_button.config(state=tk.DISABLED)
@@ -184,7 +222,8 @@ class AlarmClockApp:
             self.picker_frame.pack_forget()
             self.next_alarm_label.config(text=f"Next alarm: {self.alarm_time.strftime('%H:%M')}")
             self.next_alarm_label.pack(pady=5)
-            
+
+            messagebox.showinfo("Alarm Set", f"Alarm set for {self.alarm_time.strftime('%H:%M')}")
         except ValueError:
             messagebox.showerror("Invalid Time", "Please enter valid hour and minute.")
 
