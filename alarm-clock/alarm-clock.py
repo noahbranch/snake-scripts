@@ -8,6 +8,7 @@ import feedparser
 import requests
 import os
 import pygame
+import vlc
 
 # Constants
 DEFAULT_ALARM_SOUND = os.path.join(os.path.dirname(__file__), "gentle_pastures.mp3")  # Now reads from alarm-clock folder
@@ -199,33 +200,35 @@ class AlarmClockApp:
         self.stop_button.pack(side="left", padx=5)
         self.stop_button.config(state=tk.NORMAL)
         sound_file = DEFAULT_ALARM_SOUND
+        use_vlc = False
 
         if self.rss_feed:
             try:
                 feed = feedparser.parse(self.rss_feed)
                 audio_url = feed.entries[0].enclosures[0]['href']
-                response = requests.get(audio_url, stream=True)
-                with open(PODCAST_FILE, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=1024):
-                        if chunk:
-                            f.write(chunk)
-                sound_file = PODCAST_FILE
+                self.vlc_player = vlc.MediaPlayer(audio_url)
+                self.vlc_player.play()
+                use_vlc = True
             except Exception as e:
-                print(f"Failed to load podcast: {e}")
+                print(f"Failed to stream podcast: {e}")
 
-        try:
-            pygame.mixer.music.load(sound_file)
-            pygame.mixer.music.set_volume(0.1)
-            pygame.mixer.music.play()
-            self.alarm_volume = 0.1
-            self.volume_increase_thread = threading.Thread(target=self.increase_alarm_volume)
-            self.volume_increase_thread.daemon = True
-            self.volume_increase_thread.start()
-        except Exception as e:
-            messagebox.showerror("Playback Error", f"Could not play alarm sound: {e}")
+        if not use_vlc:
+            try:
+                pygame.mixer.music.load(sound_file)
+                pygame.mixer.music.set_volume(0.1)
+                pygame.mixer.music.play()
+                self.alarm_volume = 0.1
+                self.volume_increase_thread = threading.Thread(target=self.increase_alarm_volume)
+                self.volume_increase_thread.daemon = True
+                self.volume_increase_thread.start()
+            except Exception as e:
+                messagebox.showerror("Playback Error", f"Could not play alarm sound: {e}")
 
     def snooze(self):
         self.stop_alarm_flag = True
+        if self.vlc_player:
+            self.vlc_player.stop()
+            self.vlc_player = None
         pygame.mixer.music.stop()
         self.snooze_end_time = datetime.now() + timedelta(minutes=self.snooze_duration)
         self.alarm_time = self.snooze_end_time
@@ -248,6 +251,9 @@ class AlarmClockApp:
 
     def stop_alarm(self):
         self.stop_alarm_flag = True
+        if self.vlc_player:
+            self.vlc_player.stop()
+            self.vlc_player = None
         pygame.mixer.music.stop()
         self.set_button.config(state=tk.NORMAL)
         self.snooze_button.config(state=tk.DISABLED)
